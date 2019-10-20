@@ -60,6 +60,8 @@ public class MainActivity extends AppCompatActivity {
     boolean isPrepareJump = false;
     boolean isDucking;
 
+
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
