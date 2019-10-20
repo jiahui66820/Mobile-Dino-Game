@@ -5,8 +5,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
-import android.animation.ObjectAnimator;
-import android.animation.PropertyValuesHolder;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Rect;
@@ -15,26 +13,15 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.location.LocationManager;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
-import android.view.animation.Interpolator;
-import android.view.animation.LinearInterpolator;
 import android.widget.Button;
 import android.widget.ImageView;
 
-import org.apache.commons.math3.linear.Array2DRowRealMatrix;
 import org.apache.commons.math3.linear.ArrayRealVector;
-import org.apache.commons.math3.linear.RealMatrix;
 import org.apache.commons.math3.linear.RealVector;
-import org.apache.commons.math3.random.JDKRandomGenerator;
-import org.apache.commons.math3.random.RandomGenerator;
-import org.apache.commons.math3.util.FastMath;
-import org.apache.commons.math3.util.Precision;
-import org.junit.Assert;
 
 import java.util.Random;
 
@@ -59,10 +46,11 @@ public class MainActivity extends AppCompatActivity {
 
     private double absolutePressure;
     private boolean initRun = true;
-
+    private float[] gravityValues = null;
+    private float[] magneticValues = null;
     KalmanFilter filter;
 
-    double total=0;
+    double absoluteAccZ =0;
     double alt=0;
 
     boolean isBaroReady = false;
@@ -76,23 +64,107 @@ public class MainActivity extends AppCompatActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
         //Debug buttons (Jump, Duck, Unduck)
         buttons();
         //Kalman Filter Initialization
-        //kalmanInitial();
+        filter = KalmanFilter.kalmanInitial();
         //Animation Image Views Initialization
         animationInitial();
         // Random Obstacle Generator
         randomObstacle();
         //Show Animation
         showAnim();
+        //Start Sensors
+        sensorActivity();
     }
 
+    private void sensorActivity() {
+        SensorManager sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        Sensor barometer = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
+        Sensor accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
+        Sensor gravity = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY);
+        Sensor mag = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+
+        SensorEventListener sensorListener = new SensorEventListener() {
+            @Override
+            public void onSensorChanged(SensorEvent event) {
+                Sensor sensor = event.sensor;
+                if (sensor.getType() == Sensor.TYPE_PRESSURE) {
+                    float pressure = event.values[0];
+                    if (initRun) {
+                        absolutePressure = pressure;
+                        initRun = false;
+                    }
+                    //Convert Pressure to Altitude
+                    alt = 44300 * (1 - Math.pow(pressure / absolutePressure, 0.19));
+                    isBaroReady = true;
+                }
+                if ((gravityValues != null) && (magneticValues != null)
+                        && (event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION)) {
+
+                    float[] deviceRelativeAcceleration = new float[4];
+                    deviceRelativeAcceleration[0] = event.values[0];
+                    deviceRelativeAcceleration[1] = event.values[1];
+                    deviceRelativeAcceleration[2] = event.values[2];
+                    deviceRelativeAcceleration[3] = 0;
+
+                    // Change the device relative acceleration values to earth relative values
+                    // X axis -> East
+                    // Y axis -> North Pole
+                    // Z axis -> Sky
+
+                    float[] R = new float[16], I = new float[16], earthAcc = new float[16];
+
+                    SensorManager.getRotationMatrix(R, I, gravityValues, magneticValues);
+
+                    float[] inv = new float[16];
+
+                    android.opengl.Matrix.invertM(inv, 0, R, 0);
+                    android.opengl.Matrix.multiplyMV(earthAcc, 0, inv, 0, deviceRelativeAcceleration, 0);
+                    // Log.d("Acceleration", "Values: ( " + earthAcc[0] + ", " + earthAcc[1] + ", " + earthAcc[2] + " )");
+                    if (earthAcc[2] < -1 && !isJumping && !isDucking ) isPrepareJump = true;
+                    if (earthAcc[2] > 3.9 && isPrepareJump && !isJumping && !isDucking){
+                        dinoJump();
+                        isPrepareJump = false;
+                        isDucking = false;
+                    }
+
+                    absoluteAccZ = earthAcc[2];
+                    isAccReady = true;
+
+                } else if (event.sensor.getType() == Sensor.TYPE_GRAVITY) {
+                    gravityValues = event.values;
+                } else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
+                    magneticValues = event.values;
+                }
+
+                if (isAccReady && isBaroReady) {
+                    kalmanFilterAltitude((float) absoluteAccZ, (float) alt);
+                    //System.out.print("Kalman H: "+ filter.getStateEstimation()[0]);
+                    //System.out.println(": Kalman V: "+ filter.getStateEstimation()[1]);
+
+                    if (filter.getStateEstimation()[1] < -0.8 && !isDucking && !isJumping) {
+                        dinoDuck();
+                    }else if (filter.getStateEstimation()[1] > 0.5 && isDucking){
+                        dinoUnduck();
+                    }
+
+                    isBaroReady = false;
+                    isAccReady = false;
+                }
+            }
+
+            public void onAccuracyChanged(Sensor sensor, int accuracy) {
+            }
+        };
+        sensorManager.registerListener(sensorListener, sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION), SensorManager.SENSOR_DELAY_NORMAL );
+        sensorManager.registerListener(sensorListener, sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY), SensorManager.SENSOR_DELAY_NORMAL );
+        sensorManager.registerListener(sensorListener, sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD), SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(sensorListener, sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE), SensorManager.SENSOR_DELAY_NORMAL);
+    }
 
     public void showAnim() {
         dinoAnimation.start();
-
         groundSprite.startAnimation(groundSlide);
         ValueAnimator obstacleAnimation = ValueAnimator.ofFloat(1200, -300);
         obstacleAnimation.setDuration(2600);
@@ -173,7 +245,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 dinoJump();
-
             }
         });
         Button duckButton = (Button) findViewById(R.id.duckbutton);
@@ -252,12 +323,7 @@ public class MainActivity extends AppCompatActivity {
     private void dinoJump() {
             dinoJumpSprite = (ImageView) findViewById(R.id.dino_jump_animation);
             dinoJumpSprite.setBackgroundResource(R.drawable.dino_jump_animation);
-//            dinoJumpAnimation = (AnimationDrawable) dinoJumpSprite.getBackground();
-//            dinoJump = AnimationUtils.loadAnimation(getApplicationContext(), R.anim.dino_jump);
-
-
             float y = dinoSprite.getY();
-
             ValueAnimator jumpUpAnimation = ValueAnimator.ofFloat(y, y-350);
             jumpUpAnimation.setDuration(350);
             jumpUpAnimation.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
@@ -266,10 +332,7 @@ public class MainActivity extends AppCompatActivity {
                     dinoJumpSprite.setY((Float) animation.getAnimatedValue());
                     sprite2rect(rectJumpDino, dinoJumpSprite);
                 }
-
-
             });
-
             ValueAnimator jumpDownAnimation = ValueAnimator.ofFloat(y-350, y);
             jumpDownAnimation.setDuration(350);
             jumpDownAnimation.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
@@ -279,7 +342,6 @@ public class MainActivity extends AppCompatActivity {
                     sprite2rect(rectJumpDino, dinoJumpSprite);
                 }
             });
-
             jumpUpAnimation.addListener(new AnimatorListenerAdapter() {
                 @Override
                 public void onAnimationStart(Animator animation) {
@@ -290,7 +352,6 @@ public class MainActivity extends AppCompatActivity {
                     dinoJumpSprite.setVisibility(View.VISIBLE);
                 }
             });
-
             jumpDownAnimation.addListener(new AnimatorListenerAdapter() {
                 @Override
                 public void onAnimationEnd(Animator animation) {
@@ -304,48 +365,6 @@ public class MainActivity extends AppCompatActivity {
             set.start();
     }
 
-
-    public void kalmanInitial(){
-        // discrete time interval
-        double dt = 0.178d;
-        // position measurement noise (meter)
-        double measurementNoise = 10d;
-        // acceleration noise (meter/sec^2)
-        double accelNoise = 0.2d;
-
-        // A = [ 1 dt ]
-        //     [ 0  1 ]
-        RealMatrix A = new Array2DRowRealMatrix(new double[][] { { 1, dt }, { 0, 1 } });
-        // B = [ dt^2/2 ]
-        //     [ dt     ]
-        RealMatrix B = new Array2DRowRealMatrix(
-                new double[][] { { FastMath.pow(dt, 2d) / 2d }, { dt } });
-        // H = [ 1 0 ]
-        RealMatrix H = new Array2DRowRealMatrix(new double[][] { { 1d, 0d } });
-        System.out.println(H.toString());
-        // x = [ 0 0 ]
-        RealVector x = new ArrayRealVector(new double[] { 0, 0 });
-
-        // Q = [ dt^4/4 dt^3/2 ]
-        //     [ dt^3/2 dt^2   ]
-        RealMatrix tmp = new Array2DRowRealMatrix(
-                new double[][] { { FastMath.pow(dt, 4d) / 4d, FastMath.pow(dt, 3d) / 2d },
-                        { FastMath.pow(dt, 3d) / 2d, FastMath.pow(dt, 2d) } });
-        RealMatrix Q = tmp.scalarMultiply(FastMath.pow(accelNoise, 2));
-
-        // P0 = [ 1 1 ]
-        //      [ 1 1 ]
-        RealMatrix P0 = new Array2DRowRealMatrix(new double[][] { { 1, 1 }, { 1, 1 } });
-
-        // R = [ measurementNoise^2 ]
-        RealMatrix R = new Array2DRowRealMatrix(
-                new double[] { FastMath.pow(measurementNoise, 2) });
-
-        ProcessModel pm = new DefaultProcessModel(A, B, Q, x, P0);
-        MeasurementModel mm = new DefaultMeasurementModel(H, R);
-        filter = new KalmanFilter(pm, mm);
-    }
-
     public void kalmanFilterAltitude(float accelerometer, float barometer) {
         // Walid: Acceleration Input from Accelerometer
         RealVector u = new ArrayRealVector(new double[] { accelerometer });
@@ -353,7 +372,6 @@ public class MainActivity extends AppCompatActivity {
 
         filter.predict(u);
         filter.correct(z);
-
         }
     }
 

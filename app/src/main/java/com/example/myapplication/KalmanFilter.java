@@ -30,6 +30,7 @@ import org.apache.commons.math3.linear.NonSquareMatrixException;
 import org.apache.commons.math3.linear.RealMatrix;
 import org.apache.commons.math3.linear.RealVector;
 import org.apache.commons.math3.linear.SingularMatrixException;
+import org.apache.commons.math3.util.FastMath;
 import org.apache.commons.math3.util.MathUtils;
 
 /**
@@ -411,5 +412,47 @@ public class KalmanFilter {
         // P(k) = (I - K * H) * P(k)-
         RealMatrix identity = MatrixUtils.createRealIdentityMatrix(kalmanGain.getRowDimension());
         errorCovariance = identity.subtract(kalmanGain.multiply(measurementMatrix)).multiply(errorCovariance);
+    }
+
+    public static KalmanFilter kalmanInitial(){
+// discrete time interval
+        double dt = 0.178d;
+        // position measurement noise (meter)
+        double measurementNoise = 10d;
+        // acceleration noise (meter/sec^2)
+        double accelNoise = 0.2d;
+
+        // A = [ 1 dt ]
+        //     [ 0  1 ]
+        RealMatrix A = new Array2DRowRealMatrix(new double[][] { { 1, dt }, { 0, 1 } });
+        // B = [ dt^2/2 ]
+        //     [ dt     ]
+        RealMatrix B = new Array2DRowRealMatrix(
+                new double[][] { { FastMath.pow(dt, 2d) / 2d }, { dt } });
+        // H = [ 1 0 ]
+        RealMatrix H = new Array2DRowRealMatrix(new double[][] { { 1d, 0d } });
+        System.out.println(H.toString());
+        // x = [ 0 0 ]
+        RealVector x = new ArrayRealVector(new double[] { 0, 0 });
+
+        // Q = [ dt^4/4 dt^3/2 ]
+        //     [ dt^3/2 dt^2   ]
+        RealMatrix tmp = new Array2DRowRealMatrix(
+                new double[][] { { FastMath.pow(dt, 4d) / 4d, FastMath.pow(dt, 3d) / 2d },
+                        { FastMath.pow(dt, 3d) / 2d, FastMath.pow(dt, 2d) } });
+        RealMatrix Q = tmp.scalarMultiply(FastMath.pow(accelNoise, 2));
+
+        // P0 = [ 1 1 ]
+        //      [ 1 1 ]
+        RealMatrix P0 = new Array2DRowRealMatrix(new double[][] { { 1, 1 }, { 1, 1 } });
+
+        // R = [ measurementNoise^2 ]
+        RealMatrix R = new Array2DRowRealMatrix(
+                new double[] { FastMath.pow(measurementNoise, 2) });
+
+        ProcessModel pm = new DefaultProcessModel(A, B, Q, x, P0);
+        MeasurementModel mm = new DefaultMeasurementModel(H, R);
+
+        return new KalmanFilter(pm,mm);
     }
 }
