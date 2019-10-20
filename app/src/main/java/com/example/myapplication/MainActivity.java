@@ -2,6 +2,10 @@ package com.example.myapplication;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.drawable.AnimationDrawable;
 import android.hardware.Sensor;
@@ -10,12 +14,14 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.location.LocationManager;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import org.apache.commons.math3.linear.Array2DRowRealMatrix;
 import org.apache.commons.math3.linear.ArrayRealVector;
@@ -27,7 +33,16 @@ import org.apache.commons.math3.util.FastMath;
 import org.apache.commons.math3.util.Precision;
 import org.junit.Assert;
 
+// 1020 game #4 Initial class
+//
+import java.util.Timer;
+import java.util.TimerTask;
+
+
 public class MainActivity extends AppCompatActivity {
+
+    //
+    private final static String TAG = "MainActivity";
 
 
     CustomView view;
@@ -35,6 +50,11 @@ public class MainActivity extends AppCompatActivity {
     AnimationDrawable dinoDuckingAnimation;
     AnimationDrawable groundAnimation;
     AnimationDrawable cactusSprite1Animation;
+
+
+    // 1020
+    AnimationDrawable birdSpriteAnimation;
+
     AnimationDrawable dinoJumpAnimation;
 
     Animation groundSlide;
@@ -44,9 +64,35 @@ public class MainActivity extends AppCompatActivity {
 
     ImageView groundSprite;
     ImageView cactusSprite1;
+
+    // 1020
+    ImageView birdSprite;
+
     ImageView dinoSprite;
     ImageView dinoDuckingSprite;
     ImageView dinoJumpSprite;
+
+    // 1020 game#3 calculate score & front page start
+    private TextView scoreLabel;
+    private TextView startLabel;
+    // 自創
+    private int scoreTime = 0;
+
+
+    // 1020 game #4 Initial class
+    //private Timer timer = new Timer();
+    // pick up android studio (another option: java)
+    // 沒用到
+    //private Handler handler = new Handler();
+
+    //新招
+    // https://blog.csdn.net/zuolongsnail/article/details/8168689
+    private Timer mTimer;
+
+
+
+
+
 
     private double absolutePressure;
     private boolean initRun = true;
@@ -76,6 +122,24 @@ public class MainActivity extends AppCompatActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        // 在AndroidManifest 中加上android:screenOrientation="portrait"來鎖螢幕
+
+        // 1020 score
+        scoreLabel = (TextView) findViewById(R.id.scoreLabel);
+        // 這行還不能用，因為 game#2後半的FrameLayout還沒做
+        //startLabel = (TextView) findViewById(R.id.startLabel);
+
+
+        // 1020 新招
+        // init timer
+        mTimer = new Timer();
+        // start timer task
+        // 改放在 onStart 裡
+        //setTimerTask();
+
+
+
         //Walid: Filter initialization
         kalmanInitial();
 
@@ -111,6 +175,8 @@ public class MainActivity extends AppCompatActivity {
 
 
 
+
+
         dinoSprite = (ImageView) findViewById(R.id.dino_animation);
         dinoSprite.setBackgroundResource(R.drawable.dino_animation);
         dinoAnimation = (AnimationDrawable) dinoSprite.getBackground();
@@ -131,6 +197,13 @@ public class MainActivity extends AppCompatActivity {
         cactusSprite1.setBackgroundResource(R.drawable.obstacle_animation);
         cactusSprite1Animation = (AnimationDrawable) cactusSprite1.getBackground();
         obstacleSlide = AnimationUtils.loadAnimation(getApplicationContext(), R.anim.obstacle_slide);
+
+        // 1020 bird
+        birdSprite = (ImageView) findViewById(R.id.obstacle_animation2);
+        birdSprite.setBackgroundResource(R.drawable.obstacle_animation2);
+        birdSpriteAnimation = (AnimationDrawable) birdSprite.getBackground();
+        obstacleSlide = AnimationUtils.loadAnimation(getApplicationContext(), R.anim.obstacle_slide);
+
 
         showAnim();
 
@@ -217,7 +290,8 @@ public class MainActivity extends AppCompatActivity {
               if (isAccReady && isBaroReady) {
                    kalmanFilterAltitude((float) total, (float) alt);
                    //System.out.print("Kalman H: "+ filter.getStateEstimation()[0]);
-                  System.out.println(": Kalman V: "+ filter.getStateEstimation()[1]);
+                  //TODO
+                  //System.out.println(": Kalman V: "+ filter.getStateEstimation()[1]);
                  // System.out.println("Kalman= " + altitude);
                  // System.out.println("alt= " + absolutePressure);
                 //   System.out.println(System.currentTimeMillis());
@@ -237,16 +311,163 @@ public class MainActivity extends AppCompatActivity {
             public void onAccuracyChanged(Sensor sensor, int accuracy) {
             }
 
+
+
         };
+
+
         sensorManager.registerListener(sensorListener, sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION), SensorManager.SENSOR_DELAY_NORMAL );
         sensorManager.registerListener(sensorListener, sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY), SensorManager.SENSOR_DELAY_NORMAL );
         sensorManager.registerListener(sensorListener, sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD), SensorManager.SENSOR_DELAY_NORMAL);
         sensorManager.registerListener(sensorListener, sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE), SensorManager.SENSOR_DELAY_NORMAL);
     }
 
+    // 1020 20:00
+    @Override
+    protected void onStart() {
+        super.onStart();
+        Log.i(TAG, "On Start .....");
+
+        // start timer task
+        setTimerTask();
+    }
+
+
+    // 新招 https://blog.csdn.net/zuolongsnail/article/details/8168689
+    // scoring function
+    private void setTimerTask() {
+        mTimer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                hitCheck();
+                //Log.i(TAG, "Timer Run!");
+                scoreTime += 1;
+                scoreLabel.setText("Score : " + scoreTime);
+            }
+        }, 0, 543/* 表示0毫秒之後，每隔20毫秒執行一次 */);
+    }
+
+    // game over 結束score累加用的
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // cancel timer
+        mTimer.cancel();
+    }
+
+
+    // game#6
+    public void hitCheck(){
+
+        //ImageView groundSprite;
+        //ImageView cactusSprite1;
+        //ImageView dinoSprite;
+        //ImageView dinoDuckingSprite;
+        //ImageView dinoJumpSprite;
+
+        // dino position
+        float dinoTop = 0;
+        float dinoBottom = 0;
+        float dinoRight = 0;
+        float dinoLeft = 0;
+        Log.i(TAG, "hitCheck!");
+
+        /*
+        // ducking
+        if (isDucking){
+            dinoTop= dinoDuckingSprite.getTop();
+            dinoBottom = dinoDuckingSprite.getBottom();
+            dinoRight = dinoDuckingSprite.getRight();
+            dinoLeft = dinoDuckingSprite.getLeft();
+
+        }
+        // jumping
+        else if (isJumping){
+            dinoTop= dinoJumpSprite.getTop();
+            dinoBottom = dinoJumpSprite.getBottom();
+            dinoRight = dinoJumpSprite.getRight();
+            dinoLeft = dinoJumpSprite.getLeft();
+
+        }
+        // walking
+        else {
+            // y range
+            dinoTop= dinoSprite.getTop();
+            dinoBottom = dinoSprite.getBottom();
+            // x position
+            dinoRight = dinoSprite.getRight();
+            dinoLeft = dinoSprite.getLeft();
+
+        }*/
+
+
+        // ducking
+        if (isDucking){
+            dinoTop= dinoDuckingSprite.getY();
+            dinoLeft = dinoDuckingSprite.getX();
+            dinoBottom = dinoTop + (dinoDuckingSprite.getBottom()-dinoDuckingSprite.getTop());
+            dinoRight = dinoLeft + (dinoDuckingSprite.getRight()-dinoDuckingSprite.getLeft());
+        }
+        // jumping
+        else if (isJumping){
+            dinoTop= dinoJumpSprite.getY();
+            dinoLeft = dinoJumpSprite.getX();
+            dinoBottom = dinoTop + (dinoJumpSprite.getBottom()-dinoJumpSprite.getTop());
+            dinoRight = dinoLeft + (dinoJumpSprite.getRight()-dinoJumpSprite.getLeft());
+        }
+        // walking
+        else {
+            dinoTop= dinoSprite.getY();
+            dinoLeft = dinoSprite.getX();
+            dinoBottom = dinoTop + (dinoSprite.getBottom()-dinoSprite.getTop());
+            dinoRight = dinoLeft + (dinoSprite.getRight()-dinoSprite.getLeft());
+        }
+
+        // different obstacle
+
+        //cactusSprite1
+        //float cactusSprite1Top= cactusSprite1.getTop();
+        //float cactusSprite1Bottom= cactusSprite1.getBottom();
+        //float cactusSprite1Right= cactusSprite1.getRight();
+        //float cactusSprite1Left= cactusSprite1.getLeft();
+
+        float cactusSprite1Top = cactusSprite1.getY();
+        float cactusSprite1Left = cactusSprite1.getX();
+        float cactusSprite1Bottom = cactusSprite1Top + cactusSprite1.getBottom()-cactusSprite1.getTop();
+        float cactusSprite1Right = cactusSprite1Left + cactusSprite1.getRight()-cactusSprite1.getLeft();
+
+        System.out.println(dinoTop);
+        System.out.println(dinoBottom);
+        System.out.println(dinoLeft);
+        System.out.println(dinoRight);
+        System.out.println(cactusSprite1Top);
+        System.out.println(cactusSprite1Bottom);
+        System.out.println(cactusSprite1Left);
+        System.out.println(cactusSprite1Right);
+
+        // validate collision
+        if (! (dinoRight<cactusSprite1Left||dinoLeft>cactusSprite1Right)) {
+            if (! (dinoBottom<cactusSprite1Top||dinoTop>cactusSprite1Bottom)) {
+                // collide !!
+                // game over
+                Log.i(TAG, "Game Over!");
+                scoreTime -= 1000;
+            }
+
+        }
+
+
+
+    }
+
+
+
+
+
     private void dinoDuck(){
         isDucking = true;
-
+        //
+        isJumping = false;
 
         dinoDuckingAnimation.start();
         dinoDuckingSprite.setVisibility(View.VISIBLE);
@@ -256,14 +477,19 @@ public class MainActivity extends AppCompatActivity {
 
     private void dinoUnduck(){
         isDucking = false;
+        //
+        isJumping = false;
         dinoDuckingAnimation.stop();
         dinoDuckingSprite.setVisibility(View.GONE);
         dinoAnimation.start();
         dinoSprite.setVisibility(View.VISIBLE);
     }
 
+    /*
     private void dinoJump() {
         isJumping = true;
+        //
+        isDucking = false;
         dinoJumpSprite = (ImageView) findViewById(R.id.dino_jump_animation);
         dinoJumpSprite.setBackgroundResource(R.drawable.dino_jump_animation);
         dinoJumpAnimation = (AnimationDrawable) dinoJumpSprite.getBackground();
@@ -290,12 +516,82 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+    }*/
+
+    private void dinoJump() {
+        isJumping = true;
+        dinoJumpSprite = (ImageView) findViewById(R.id.dino_jump_animation);
+        dinoJumpSprite.setBackgroundResource(R.drawable.dino_jump_animation);
+        dinoJumpAnimation = (AnimationDrawable) dinoJumpSprite.getBackground();
+        dinoJump = AnimationUtils.loadAnimation(getApplicationContext(), R.anim.dino_jump);
+
+        dinoSprite.setVisibility(View.GONE);
+        dinoDuckingSprite.setVisibility(View.GONE);
+
+        //dinoJumpSprite.startAnimation(dinoJump);
+
+
+        float y = dinoSprite.getY();
+
+        ValueAnimator animator = ValueAnimator.ofFloat(y, y-300);
+        animator.setDuration(350);
+        animator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animation) {
+                dinoJumpSprite.setY((Float) animation.getAnimatedValue());
+                //System.out.println(dinoJumpSprite.getY());
+            }
+        });
+
+        ValueAnimator animator2 = ValueAnimator.ofFloat(y-300, y);
+        animator2.setDuration(350);
+        animator2.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animation) {
+                dinoJumpSprite.setY((Float) animation.getAnimatedValue());
+                //System.out.println(dinoJumpSprite.getY());
+            }
+        });
+
+        animator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationStart(Animator animation) {
+
+                dinoSprite.setVisibility(View.GONE);
+                dinoJumpSprite.setVisibility(View.VISIBLE);
+                isJumping = true;
+            }
+        });
+
+        animator2.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+
+                dinoSprite.setVisibility(View.VISIBLE);
+                dinoJumpSprite.setVisibility(View.GONE);
+                isJumping = false;
+            }
+        });
+        AnimatorSet set = new AnimatorSet();
+        set.playSequentially(animator, animator2);
+
+
+        set.start();
+
     }
+
+
+
+
+
+
 
     public void showAnim() {
         dinoAnimation.start();
         groundSprite.startAnimation(groundSlide);
         cactusSprite1.startAnimation(obstacleSlide);
+        // 1020
+        birdSprite.startAnimation(obstacleSlide);
     }
 
     public void kalmanInitial(){
@@ -315,7 +611,7 @@ public class MainActivity extends AppCompatActivity {
                 new double[][] { { FastMath.pow(dt, 2d) / 2d }, { dt } });
         // H = [ 1 0 ]
         RealMatrix H = new Array2DRowRealMatrix(new double[][] { { 1d, 0d } });
-        System.out.println(H.toString());
+        //System.out.println(H.toString());
         // x = [ 0 0 ]
         RealVector x = new ArrayRealVector(new double[] { 0, 0 });
 
@@ -374,6 +670,7 @@ public class MainActivity extends AppCompatActivity {
               //  0.1d, 1e-6) < 0);
 
     }
+
 
 
 

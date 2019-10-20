@@ -16,6 +16,18 @@
         tools:layout_editor_absoluteX="0dp"
         tools:layout_editor_absoluteY="-16dp">
 
+        // 1020 score test
+        // use padding to modify the space inside the view (not margin)
+        // https://stackoverflow.com/questions/4619899/difference-between-a-views-padding-and-margin
+        <TextView
+            android:id="@+id/scoreLabel"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="300"
+            android:textSize = "18sp"
+            android:paddingLeft="250dp"
+            android:gravity="center_vertical"/>
+
         <ImageView
             android:id="@+id/ground_animation"
             android:layout_width="1827dp"
@@ -96,6 +108,37 @@
             app:layout_constraintTop_toTopOf="parent"
             tools:layout_conversion_wrapHeight="126"
             tools:layout_conversion_wrapWidth="66"></ImageView>
+
+
+        // 1020 bird
+        <ImageView
+            android:id="@+id/obstacle_animation2"
+            android:layout_width="50dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-150dp"
+
+            android:layout_marginTop="300dp"
+
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="385dp"
+
+
+            android:contentDescription="TODO"
+            android:orientation="vertical"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:layout_conversion_wrapHeight="126"
+            tools:layout_conversion_wrapWidth="66"></ImageView>
+
+
+
+
+
+
+
+
 
         <Button
             android:id="@+id/button"
